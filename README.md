@@ -1,158 +1,159 @@
 # GeoIP MCP Server
 
-An MCP (Model Context Protocol) server that provides IP geolocation services using MaxMind's GeoIP2 databases.
+A Model Context Protocol (MCP) server providing IP geolocation and ASN lookup services using MaxMind GeoIP2 databases.
+
+---
 
 ## Features
 
-- Single IP geolocation
-- Bulk IP geolocation
-- ASN (Autonomous System Number) information
-- Support for both IPv4 and IPv6 addresses
-- City, country, subdivision, and postal code information
-- Latitude/longitude coordinates
-- Network information
+- **Single & Bulk IP Geolocation:** Lookup for IPv4 and IPv6 addresses.
+- **ASN Information:** Retrieve Autonomous System Number and organization.
+- **Comprehensive Location Data:** Country, city, subdivision, postal code, latitude/longitude, and network info.
+- **Distance Calculation:** Compute distance between two coordinates.
+- **Caching:** In-memory cache for fast repeated lookups.
+- **Flexible Output:** JSON, summary, and CSV formats.
+- **Health Checks & Performance Monitoring:** Tools for server and database health.
+- **MCP Protocol:** Compatible with MCP clients.
+
+---
 
 ## Setup
 
-1. Install dependencies:
-```bash
+### 1. Install Dependencies
+
+```sh
 pip install -r requirements.txt
 ```
 
-2. Download MaxMind GeoIP2 databases:
+### 2. Download MaxMind GeoIP2 Databases
 
-Download GeoLite2-City.mmdb and GeoLite2-ASN.mmdb from MaxMind
-You can get free databases by signing up at https://www.maxmind.com/
-Set environment variables:
+- Register for a free MaxMind account: https://www.maxmind.com/
+- Download `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`.
+- Place them in a known directory (e.g., `~/Downloads/`).
 
-```bash
+### 3. Set Environment Variables
+
+```sh
 export GEOIP_CITY_DB="~/Downloads/GeoLite2-City.mmdb"
 export GEOIP_ASN_DB="~/Downloads/GeoLite2-ASN.mmdb"
+# Optional:
+export GEOIP_COUNTRY_DB="~/Downloads/GeoLite2-Country.mmdb"
+export GEOIP_CACHE_TTL=3600
 ```
 
-## Usage
-Run the server:
+---
 
-```bash
+## Usage
+
+### Run the Server
+
+```sh
 python server.py
 ```
 
+The server communicates via MCP protocol (stdio by default).
+
+---
+
 ## Available Tools
-- geolocate_ip
-Get geolocation information for a single IP address.
 
-Parameters:
+### 1. `geolocate_ip`
+Get geolocation for a single IP.
 
-- ip_address (required): IP address to geolocate
-- include_asn (optional): Include ASN information (default: true)
-- geolocate_multiple_ips
+**Parameters:**
+- `ip_address` (string, required)
+- `include_asn` (boolean, default: true)
+- `output_format` (json|summary|csv, default: json)
+- `use_cache` (boolean, default: true)
 
-Get geolocation information for multiple IP addresses.
+---
 
-Parameters:
+### 2. `geolocate_multiple_ips`
+Batch geolocation for multiple IPs.
 
-ip_addresses (required): Array of IP addresses to geolocate
-include_asn (optional): Include ASN information (default: true)
-get_asn_info
-Get ASN information for an IP address.
+**Parameters:**
+- `ip_addresses` (array of strings, required)
+- `include_asn` (boolean, default: true)
+- `output_format` (json|summary|csv, default: json)
+- `use_cache` (boolean, default: true)
 
-Parameters:
+---
 
-ip_address (required): IP address to get ASN information for
-Example Output
-json
+### 3. `get_asn_info`
+Get ASN info for an IP.
 
+**Parameters:**
+- `ip_address` (string, required)
 
+---
+
+### 4. `calculate_distance`
+Calculate distance between two coordinates.
+
+**Parameters:**
+- `lat1`, `lon1` (float, required): Point 1
+- `lat2`, `lon2` (float, required): Point 2
+- `unit` (km|mi, default: km)
+
+---
+
+### 5. `server_management`
+Server operations.
+
+**Parameters:**
+- `action` (clear_cache|get_stats|reload_databases, required)
+
+---
+
+## Example Output
+
+```json
 {
   "ip_address": "203.0.113.0",
   "location": {
-    "country": {
-      "iso_code": "US",
-      "name": "United States",
-      "names": {
-        "en": "United States",
-        "zh-CN": "美国"
-      }
-    },
-    "subdivisions": {
-      "most_specific": {
-        "name": "Minnesota",
-        "iso_code": "MN"
-      }
-    },
-    "city": {
-      "name": "Minneapolis"
-    },
-    "postal": {
-      "code": "55455"
-    },
-    "location": {
-      "latitude": 44.9733,
-      "longitude": -93.2323,
-      "accuracy_radius": 50,
-      "time_zone": "America/Chicago"
-    },
-    "traits": {
-      "network": "203.0.113.0/24"
-    }
+    "country": {"iso_code": "US", "name": "United States"},
+    "city": {"name": "Minneapolis"},
+    "location": {"latitude": 44.9733, "longitude": -93.2323}
   },
   "asn": {
     "autonomous_system_number": 1221,
-    "autonomous_system_organization": "Telstra Pty Ltd",
-    "ip_address": "203.0.113.0",
-    "network": "203.0.113.0/24"
+    "autonomous_system_organization": "Telstra Pty Ltd"
   }
 }
-Error Handling
-The server handles various error conditions:
+```
 
-Invalid IP address formats
-Missing database files
-IP addresses not found in databases
-Network connectivity issues
-License
-This project is licensed under the MIT License.
+---
 
-code
+## Error Handling
 
+- Invalid IP address formats
+- Missing or unreadable database files
+- IP not found in database
+- Network/database errors
 
+---
 
-## Installation and Setup Instructions
+## Health & Monitoring
 
-1. **Create the project directory:**
-```bash
-mkdir geoip-mcp-server
-cd geoip-mcp-server
-Create the files with the content provided above.
+- Use `health_check.py` for system/database health.
+- Use `performance_monitor.py` for performance metrics.
 
-Install dependencies:
+---
 
-bash
+## Docker
 
+A [Dockerfile](Dockerfile) and [docker-compose.yaml](docker-compose.yaml) are provided.
 
-pip install -r requirements.txt
-Download GeoIP2 databases:
+```sh
+docker-compose up --build
+```
 
-Sign up for a free MaxMind account at https://www.maxmind.com/
-Download GeoLite2-City.mmdb and GeoLite2-ASN.mmdb
-Place them in a known location
-Set environment variables:
+---
 
-bash
+## License
 
+This project is licensed under the [GNU GPL v3](LICENSE).
 
-export GEOIP_CITY_DB="~/Downloads/your/GeoLite2-City.mmdb"
-export GEOIP_ASN_DB="~/Downloads/your/GeoLite2-ASN.mmdb"
-Run the server:
-bash
+---
 
-
-python server.py
-Key Features
-Comprehensive geolocation: Provides country, city, subdivision, postal code, and coordinates
-ASN information: Includes autonomous system details
-Bulk processing: Can handle multiple IPs in a single request
-Error handling: Graceful handling of invalid IPs and missing data
-Flexible output: JSON-formatted responses with detailed information
-Environment configuration: Easy database path configuration via environment variables
-The server follows MCP protocol standards and can be integrated with any MCP-compatible client to provide IP geolocation services.
+## Credits

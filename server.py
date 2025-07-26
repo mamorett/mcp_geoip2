@@ -3,12 +3,12 @@
 Enhanced GeoIP MCP Server with distance calculation and all features
 """
 
+# Standard library imports
 import asyncio
 import json
 import logging
 import os
 import sys
-import time
 import math
 from typing import Any, Dict, List, Optional, Tuple
 import ipaddress
@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from pathlib import Path
 
+# Third-party library imports
 import geoip2.database
 import geoip2.errors
 from mcp.server import Server
@@ -30,7 +31,7 @@ from mcp.types import (
     LoggingLevel
 )
 
-# Configure logging
+# Configure logging for the server
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("geoip-mcp-server")
 
@@ -39,7 +40,7 @@ class CacheEntry:
     """Cache entry for storing lookup results"""
     data: Dict[str, Any]
     timestamp: datetime
-    ttl: int = 3600  # 1 hour default TTL
+    ttl: int = 3600  # Time-to-live for the cache entry in seconds (default 1 hour)
 
 class GeoIPCache:
     """Simple in-memory cache for GeoIP lookups"""
@@ -53,14 +54,16 @@ class GeoIPCache:
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         """Get cached entry if not expired"""
         if key in self.cache:
+            # Entry exists, check if it's still valid
             entry = self.cache[key]
             if datetime.now() - entry.timestamp < timedelta(seconds=entry.ttl):
+                # Entry is valid (not expired)
                 self.hits += 1
                 return entry.data
             else:
-                # Remove expired entry
+                # Entry has expired, remove it from the cache
                 del self.cache[key]
-        
+        # Entry not found or was expired
         self.misses += 1
         return None
     
@@ -78,6 +81,7 @@ class GeoIPCache:
     def stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         total_requests = self.hits + self.misses
+        # Calculate hit rate, avoiding division by zero
         hit_rate = (self.hits / total_requests * 100) if total_requests > 0 else 0
         
         return {
@@ -88,19 +92,21 @@ class GeoIPCache:
         }
 
 class EnhancedGeoIPServer:
+    """The main class for the Enhanced GeoIP MCP Server."""
     def __init__(self):
+        # Initialize the underlying MCP server
         self.server = Server("enhanced-geoip-mcp-server")
         
-        # Fix path expansion issue
+        # Load database paths from environment variables, expanding the user home directory (~)
         self.city_db_path = os.path.expanduser(os.getenv("GEOIP_CITY_DB", "~/Downloads/GeoLite2-City.mmdb"))
         self.asn_db_path = os.path.expanduser(os.getenv("GEOIP_ASN_DB", "~/Downloads/GeoLite2-ASN.mmdb"))
         self.country_db_path = os.path.expanduser(os.getenv("GEOIP_COUNTRY_DB", "~/Downloads/GeoLite2-Country.mmdb"))
         
-        # Initialize cache
+        # Initialize the in-memory cache with a configurable TTL
         cache_ttl = int(os.getenv("GEOIP_CACHE_TTL", "3600"))
         self.cache = GeoIPCache(default_ttl=cache_ttl)
         
-        # Performance tracking
+        # Basic performance tracking metrics
         self.request_count = 0
         self.start_time = datetime.now()
         
@@ -112,6 +118,7 @@ class EnhancedGeoIPServer:
 
     def _validate_db_paths(self):
         """Validate that database files exist and get their info"""
+        # This dictionary will store metadata about the available databases
         self.db_info = {}
         
         for db_name, db_path in [
@@ -119,6 +126,7 @@ class EnhancedGeoIPServer:
             ("asn", self.asn_db_path),
             ("country", self.country_db_path)
         ]:
+            # Check if the file exists at the specified path
             if os.path.exists(db_path):
                 try:
                     stat = os.stat(db_path)
@@ -133,6 +141,7 @@ class EnhancedGeoIPServer:
                     logger.error(f"Error accessing {db_name} database: {e}")
                     self.db_info[db_name] = {"available": False, "error": str(e)}
             else:
+                # Log a warning if a database file is not found
                 logger.warning(f"{db_name.capitalize()} database not found at {db_path}")
                 self.db_info[db_name] = {"available": False, "error": "File not found"}
 
@@ -182,10 +191,12 @@ class EnhancedGeoIPServer:
 
     def _is_private_ip(self, ip_str: str) -> bool:
         """Check if an IP address is private/internal"""
+        # Uses the ipaddress library for robust checking
         try:
             ip = ipaddress.ip_address(ip_str)
             return ip.is_private
         except ValueError:
+            # If the string is not a valid IP, it's not a private IP
             return False
 
     def _get_ip_type(self, ip_str: str) -> str:
@@ -207,10 +218,11 @@ class EnhancedGeoIPServer:
 
     def _setup_handlers(self):
         """Setup MCP server handlers"""
-        
+        # Decorator to register the function that lists available resources
         @self.server.list_resources()
         async def handle_list_resources() -> List[Resource]:
             """List available resources"""
+            # These resources provide server metadata and can be read by clients
             return [
                 Resource(
                     uri="geoip://server/status",
@@ -232,10 +244,12 @@ class EnhancedGeoIPServer:
                 )
             ]
 
+        # Decorator to register the function that handles reading resources
         @self.server.read_resource()
         async def handle_read_resource(uri: str) -> str:
             """Handle resource reading"""
             if uri == "geoip://server/status":
+                # Provide current server status information
                 uptime = datetime.now() - self.start_time
                 return json.dumps({
                     "status": "running",
@@ -247,17 +261,22 @@ class EnhancedGeoIPServer:
                 }, indent=2)
             
             elif uri == "geoip://databases/info":
+                # Return the database metadata collected during initialization
                 return json.dumps(self.db_info, indent=2)
             
             elif uri == "geoip://cache/stats":
+                # Return the current cache statistics
                 return json.dumps(self.cache.stats(), indent=2)
             
             else:
+                # Handle requests for unknown resources
                 raise ValueError(f"Unknown resource: {uri}")
 
+        # Decorator to register the function that lists available tools
         @self.server.list_tools()
         async def handle_list_tools() -> List[Tool]:
             """List available tools"""
+            # These tools represent the core functionality of the server
             return [
                 Tool(
                     name="geolocate_ip",
@@ -384,11 +403,13 @@ class EnhancedGeoIPServer:
                 )
             ]
 
+        # Decorator to register the function that executes tool calls
         @self.server.call_tool()
         async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             """Handle tool calls"""
             self.request_count += 1
             
+            # Dispatch the call to the appropriate handler method based on the tool name
             try:
                 if name == "geolocate_ip":
                     return await self._geolocate_single_ip(arguments)
@@ -403,6 +424,7 @@ class EnhancedGeoIPServer:
                 else:
                     raise ValueError(f"Unknown tool: {name}")
             except Exception as e:
+                # Generic error handling for any unhandled exceptions in tools
                 logger.error(f"Error in tool {name}: {str(e)}")
                 return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -416,11 +438,14 @@ class EnhancedGeoIPServer:
 
     def _get_city_info(self, ip_address: str) -> Dict[str, Any]:
         """Get city/location information for an IP address"""
+        # Ensure the database file exists before trying to open it
         if not os.path.exists(self.city_db_path):
             raise FileNotFoundError(f"City database not found at {self.city_db_path}")
-            
+        
+        # The 'with' statement ensures the database reader is properly closed
         with geoip2.database.Reader(self.city_db_path) as reader:
             try:
+                # Perform the lookup
                 response = reader.city(ip_address)
                 return {
                     "country": {
@@ -453,15 +478,19 @@ class EnhancedGeoIPServer:
                     }
                 }
             except geoip2.errors.AddressNotFoundError:
+                # Handle cases where the IP is not found in the database
                 return {"error": f"No city information found for IP {ip_address}"}
 
     def _get_asn_info(self, ip_address: str) -> Dict[str, Any]:
         """Get ASN information for an IP address"""
+        # Ensure the database file exists before trying to open it
         if not os.path.exists(self.asn_db_path):
             raise FileNotFoundError(f"ASN database not found at {self.asn_db_path}")
-            
+        
+        # The 'with' statement ensures the database reader is properly closed
         with geoip2.database.Reader(self.asn_db_path) as reader:
             try:
+                # Perform the lookup
                 response = reader.asn(ip_address)
                 return {
                     "autonomous_system_number": response.autonomous_system_number,
@@ -470,10 +499,12 @@ class EnhancedGeoIPServer:
                     "network": str(response.network) if response.network else None
                 }
             except geoip2.errors.AddressNotFoundError:
+                # Handle cases where the IP is not found in the database
                 return {"error": f"No ASN information found for IP {ip_address}"}
 
     def _format_output(self, data: Any, format_type: str) -> str:
         """Format output based on requested format"""
+        # Dispatch to the correct formatting helper
         if format_type == "json":
             return json.dumps(data, indent=2)
         elif format_type == "summary":
@@ -481,6 +512,7 @@ class EnhancedGeoIPServer:
         elif format_type == "csv":
             return self._to_csv(data)
         else:
+            # Default to JSON if format is unknown
             return json.dumps(data, indent=2)
 
     def _to_csv(self, data: Any) -> str:
@@ -489,7 +521,7 @@ class EnhancedGeoIPServer:
             if not data:
                 return ""
             
-            # Get headers from first item
+            # Dynamically generate headers based on the content of the first item
             headers = ["ip_address"]
             first_item = data[0]
             
@@ -498,8 +530,10 @@ class EnhancedGeoIPServer:
             if "asn" in first_item and not first_item["asn"].get("error"):
                 headers.extend(["asn_number", "asn_organization"])
             
+            # Start with the header row
             lines = [",".join(headers)]
             
+            # Iterate through each result item to build the data rows
             for item in data:
                 row = [item.get("ip_address", "")]
                 
@@ -519,17 +553,20 @@ class EnhancedGeoIPServer:
                         asn.get("autonomous_system_organization", "")
                     ])
                 
+                # Enclose each field in quotes to handle commas within fields
                 lines.append(",".join(f'"{field}"' for field in row))
             
             return "\n".join(lines)
         else:
-            # Single item
+            # If it's a single item, wrap it in a list and reuse the list logic
             return self._to_csv([data])
 
     def _to_summary(self, data: Any) -> str:
         """Convert data to human-readable summary"""
+        # Handle both a single result and a list of results
         if isinstance(data, list):
             summaries = []
+            # Generate a summary for each item in the list
             for item in data:
                 summaries.append(self._single_item_summary(item))
             return "\n\n".join(summaries)
@@ -539,6 +576,7 @@ class EnhancedGeoIPServer:
     def _single_item_summary(self, item: Dict) -> str:
         """Create summary for single item"""
         ip = item.get("ip_address", "Unknown")
+        # Build a list of strings that will be joined by newlines
         summary = [f"IP Address: {ip}"]
         
         if "location" in item and not item["location"].get("error"):
@@ -581,12 +619,13 @@ class EnhancedGeoIPServer:
         if not self._validate_ip(ip_address):
             return [TextContent(type="text", text=f"Error: Invalid IP address format: {ip_address}")]
         
-        # Check cache first
+        # Check cache first to avoid re-processing
         cache_key = f"{ip_address}:{include_asn}"
         if use_cache:
             cached_result = self.cache.get(cache_key)
             if cached_result:
                 formatted_output = self._format_output(cached_result, output_format)
+                # Return cached result immediately
                 return [TextContent(type="text", text=formatted_output)]
         
         result = {"ip_address": ip_address}
@@ -606,10 +645,11 @@ class EnhancedGeoIPServer:
             except Exception as e:
                 result["asn"] = {"error": str(e)}
         
-        # Cache the result
+        # Store the new result in the cache for future requests
         if use_cache:
             self.cache.set(cache_key, result)
         
+        # Format and return the final output
         formatted_output = self._format_output(result, output_format)
         return [TextContent(type="text", text=formatted_output)]
 
@@ -625,6 +665,7 @@ class EnhancedGeoIPServer:
         
         results = []
         
+        # Process each IP address in the list
         for ip_address in ip_addresses:
             if not self._validate_ip(ip_address):
                 results.append({
@@ -633,7 +674,7 @@ class EnhancedGeoIPServer:
                 })
                 continue
             
-            # Check cache first
+            # Check cache for each IP
             cache_key = f"{ip_address}:{include_asn}"
             if use_cache:
                 cached_result = self.cache.get(cache_key)
@@ -658,12 +699,13 @@ class EnhancedGeoIPServer:
                 except Exception as e:
                     result["asn"] = {"error": str(e)}
             
-            # Cache the result
+            # Cache the individual result
             if use_cache:
                 self.cache.set(cache_key, result)
             
             results.append(result)
         
+        # Format the entire list of results
         formatted_output = self._format_output(results, output_format)
         return [TextContent(type="text", text=formatted_output)]
 
@@ -678,6 +720,7 @@ class EnhancedGeoIPServer:
             return [TextContent(type="text", text=f"Error: Invalid IP address format: {ip_address}")]
         
         try:
+            # This tool is a simpler wrapper around the core ASN lookup function
             asn_info = self._get_asn_info(ip_address)
             result = {
                 "ip_address": ip_address,
@@ -690,6 +733,7 @@ class EnhancedGeoIPServer:
     async def _calculate_distance_tool(self, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle distance calculation request"""
         try:
+            # Safely get and convert arguments
             lat1 = float(arguments.get("lat1"))
             lon1 = float(arguments.get("lon1"))
             lat2 = float(arguments.get("lat2"))
@@ -697,7 +741,7 @@ class EnhancedGeoIPServer:
             unit = arguments.get("unit", "km")
             
             distance = self._calculate_distance(lat1, lon1, lat2, lon2, unit)
-            
+            # Structure the result for clear JSON output
             result = {
                 "point1": {"latitude": lat1, "longitude": lon1},
                 "point2": {"latitude": lat2, "longitude": lon2},
@@ -707,6 +751,7 @@ class EnhancedGeoIPServer:
             
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
             
+        # Handle cases where coordinates are not valid numbers
         except (ValueError, TypeError) as e:
             return [TextContent(type="text", text=f"Error: Invalid coordinates - {str(e)}")]
         except Exception as e:
@@ -715,12 +760,13 @@ class EnhancedGeoIPServer:
     async def _server_management(self, arguments: Dict[str, Any]) -> List[TextContent]:
         """Handle server management operations"""
         action = arguments.get("action")
-        
+        # Dispatch to the correct management action
         if action == "clear_cache":
             self.cache.clear()
             return [TextContent(type="text", text="Cache cleared successfully")]
         
         elif action == "get_stats":
+            # Compile a comprehensive statistics object from various parts of the server
             uptime = datetime.now() - self.start_time
             stats = {
                 "server": {
@@ -734,6 +780,7 @@ class EnhancedGeoIPServer:
             return [TextContent(type="text", text=json.dumps(stats, indent=2))]
         
         elif action == "reload_databases":
+            # Re-run the database validation logic
             self._validate_db_paths()
             return [TextContent(type="text", text="Database information reloaded")]
         
@@ -743,12 +790,13 @@ class EnhancedGeoIPServer:
     async def run(self):
         """Run the enhanced server"""
         logger.info("Starting Enhanced GeoIP MCP Server...")
+        # stdio_server provides the communication streams for an MCP server
         async with stdio_server() as (read_stream, write_stream):
-            # Create proper initialization options
+            # Define the server's identity and capabilities for the client
             init_options = InitializationOptions(
                 server_name="enhanced-geoip-mcp-server",
                 server_version="1.1.0",
-                capabilities={}  # Use empty dict instead of calling get_capabilities
+                capabilities={}
             )
             
             await self.server.run(
@@ -759,8 +807,10 @@ class EnhancedGeoIPServer:
 
 async def main():
     """Main entry point"""
+    # Create an instance of the server and run it
     server = EnhancedGeoIPServer()
     await server.run()
 
+# Standard Python entry point check
 if __name__ == "__main__":
     asyncio.run(main())
