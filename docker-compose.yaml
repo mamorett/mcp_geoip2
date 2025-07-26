@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  geoip-mcp-server:
+    build: .
+    container_name: geoip-mcp-server
+    volumes:
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+    environment:
+      - GEOIP_CITY_DB=/app/data/GeoLite2-City.mmdb
+      - GEOIP_ASN_DB=/app/data/GeoLite2-ASN.mmdb
+      - GEOIP_COUNTRY_DB=/app/data/GeoLite2-Country.mmdb
+      - GEOIP_CACHE_TTL=3600
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

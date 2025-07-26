@@ -1,0 +1,30 @@
+{
+  "databases": {
+    "city": {
+      "path": "~/Downloads/GeoLite2-City.mmdb",
+      "required": true
+    },
+    "asn": {
+      "path": "~/Downloads/GeoLite2-ASN.mmdb",
+      "required": true
+    },
+    "country": {
+      "path": "~/Downloads/GeoLite2-Country.mmdb",
+      "required": false
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "ttl": 3600,
+    "max_entries": 10000
+  },
+  "limits": {
+    "max_batch_size": 100,
+    "max_cidr_sample": 50,
+    "rate_limit": 1000
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "geoip-server.log"
+  }
+}
