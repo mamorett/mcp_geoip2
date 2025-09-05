@@ -6,13 +6,15 @@ A Model Context Protocol (MCP) server providing IP geolocation and ASN lookup se
 
 ## Features
 
-- **Single & Bulk IP Geolocation:** Lookup for IPv4 and IPv6 addresses.
+- **Single & Bulk IP Geolocation:** Lookup for IPv4 and IPv6 addresses, with batch concurrency (configurable via `GEOIP_CONCURRENCY`).
 - **ASN Information:** Retrieve Autonomous System Number and organization.
+- **Country-only Lookup:** Efficient country-level lookup tool.
 - **Comprehensive Location Data:** Country, city, subdivision, postal code, latitude/longitude, and network info.
 - **Distance Calculation:** Compute distance between two coordinates.
-- **Caching:** In-memory cache for fast repeated lookups.
+- **Caching:** In-memory cache for fast repeated lookups (configurable via `GEOIP_CACHE_TTL`).
 - **Flexible Output:** JSON, summary, and CSV formats.
 - **Health Checks & Performance Monitoring:** Tools for server and database health.
+- **Prometheus Metrics:** Optional exporter via `PROMETHEUS_PORT`.
 - **MCP Protocol:** Compatible with MCP clients.
 
 ---
@@ -28,7 +30,7 @@ pip install -r requirements.txt
 ### 2. Download MaxMind GeoIP2 Databases
 
 - Register for a free MaxMind account: https://www.maxmind.com/
-- Download `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`.
+- Download `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` (and optionally `GeoLite2-Country.mmdb`).
 - Place them in a known directory (e.g., `~/Downloads/`).
 
 ### 3. Set Environment Variables
@@ -36,9 +38,10 @@ pip install -r requirements.txt
 ```sh
 export GEOIP_CITY_DB="~/Downloads/GeoLite2-City.mmdb"
 export GEOIP_ASN_DB="~/Downloads/GeoLite2-ASN.mmdb"
-# Optional:
-export GEOIP_COUNTRY_DB="~/Downloads/GeoLite2-Country.mmdb"
+export GEOIP_COUNTRY_DB="~/Downloads/GeoLite2-Country.mmdb"  # optional
 export GEOIP_CACHE_TTL=3600
+export GEOIP_CONCURRENCY=20
+export PROMETHEUS_PORT=9000  # optional, for Prometheus metrics
 ```
 
 ---
@@ -69,7 +72,7 @@ Get geolocation for a single IP.
 ---
 
 ### 2. `geolocate_multiple_ips`
-Batch geolocation for multiple IPs.
+Batch geolocation for multiple IPs (concurrent, configurable).
 
 **Parameters:**
 - `ip_addresses` (array of strings, required)
@@ -105,6 +108,16 @@ Server operations.
 
 ---
 
+### 6. `geolocate_country`
+Country-only geolocation for a single IP.
+
+**Parameters:**
+- `ip_address` (string, required)
+- `output_format` (json|summary|csv, default: json)
+- `use_cache` (boolean, default: true)
+
+---
+
 ## Example Output
 
 ```json
@@ -137,6 +150,7 @@ Server operations.
 
 - Use `health_check.py` for system/database health.
 - Use `performance_monitor.py` for performance metrics.
+- Prometheus metrics available if `PROMETHEUS_PORT` is set.
 
 ---
 
