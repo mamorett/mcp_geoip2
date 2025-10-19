@@ -655,8 +655,6 @@ def geolocate_country(
 # Entrypoint
 # -------------------------
 
-# Replace your current main() and __main__ section with:
-
 def main():
     """Synchronous main function for MCP compatibility"""
     import logging
@@ -672,4 +670,4 @@ def main():
     app.run()  # Use sync run instead of run_async()
 
 if __name__ == "__main__":
-    main()  # Remove asyncio.run()
+    main()
