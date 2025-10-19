@@ -414,189 +414,185 @@ def metrics_snapshot() -> str:
     }
     return json.dumps(snapshot, indent=2)
 
-# -------------------------
-# Tool input models
-# -------------------------
-
-# Single IP geolocation input
-class GeolocateIPInput(BaseModel):
-    ip_address: str = Field(..., description="IPv4 or IPv6 address")
-    include_asn: bool = True
-    output_format: Literal["json", "summary", "csv"] = "json"
-    use_cache: bool = True
-
-    @field_validator("ip_address")
-    @classmethod
-    def _valid_ip(cls, v: str) -> str:
-        if not validate_ip(v):
-            raise ValueError(f"Invalid IP address format: {v}")
-        return v
-
-# Multiple IPs geolocation input (batch)
-class GeolocateMultipleIPsInput(BaseModel):
-    ip_addresses: List[str] = Field(..., min_length=1, max_length=100)
-    include_asn: bool = True
-    output_format: Literal["json", "summary", "csv"] = "json"
-    use_cache: bool = True
-
-# ASN lookup
-class GetASNInput(BaseModel):
-    ip_address: str
-
-    @field_validator("ip_address")
-    @classmethod
-    def _valid_ip(cls, v: str) -> str:
-        if not validate_ip(v):
-            raise ValueError(f"Invalid IP address format: {v}")
-        return v
-
-# Distance calc
-class DistanceInput(BaseModel):
-    lat1: float
-    lon1: float
-    lat2: float
-    lon2: float
-    unit: Literal["km", "mi"] = "km"
-
-# Server management
-class ServerManagementInput(BaseModel):
-    action: Literal["clear_cache", "get_stats", "reload_databases"]
-
-# Country-only lookup
-class GeolocateCountryInput(BaseModel):
-    ip_address: str
-    output_format: Literal["json", "summary", "csv"] = "json"
-    use_cache: bool = True
-
-    @field_validator("ip_address")
-    @classmethod
-    def _valid_ip(cls, v: str) -> str:
-        if not validate_ip(v):
-            raise ValueError(f"Invalid IP address format: {v}")
-        return v
-
 
 # -------------------------
-# Tools
+# Tools (FIXED)
 # -------------------------
 
 @app.tool("geolocate_ip", description="Get comprehensive geolocation information for a single IP address")
-def geolocate_ip(payload: GeolocateIPInput) -> str:
+def geolocate_ip(
+    ip_address: str,
+    include_asn: bool = True,
+    output_format: Literal["json", "summary", "csv"] = "json",
+    use_cache: bool = True
+) -> str:
+    """
+    Args:
+        ip_address: IPv4 or IPv6 address to geolocate
+        include_asn: Whether to include ASN information
+        output_format: Output format (json, summary, or csv)
+        use_cache: Whether to use cached results
+    """
+    # Validate IP
+    if not validate_ip(ip_address):
+        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
+    
     REQUESTS_TOTAL.labels(tool="geolocate_ip").inc()
     STATE.request_count += 1
 
-    cache_key = f"{payload.ip_address}:{payload.include_asn}"
-    cached = STATE.cache.get(cache_key) if payload.use_cache else None
+    cache_key = f"{ip_address}:{include_asn}"
+    cached = STATE.cache.get(cache_key) if use_cache else None
     if cached:
         CACHE_HITS.labels(kind="single").inc()
-        return format_output(cached, payload.output_format)
+        return format_output(cached, output_format)
     else:
-        if payload.use_cache:
+        if use_cache:
             CACHE_MISSES.labels(kind="single").inc()
 
-    result: Dict[str, Any] = {"ip_address": payload.ip_address}
+    result: Dict[str, Any] = {"ip_address": ip_address}
     try:
-        result["location"] = get_city_info(payload.ip_address)
+        result["location"] = get_city_info(ip_address)
     except Exception as e:
         result["location"] = {"error": str(e)}
         REQUEST_ERRORS_TOTAL.labels(tool="geolocate_ip").inc()
 
-    if payload.include_asn:
+    if include_asn:
         try:
-            result["asn"] = get_asn_info(payload.ip_address)
+            result["asn"] = get_asn_info(ip_address)
         except Exception as e:
             result["asn"] = {"error": str(e)}
             REQUEST_ERRORS_TOTAL.labels(tool="geolocate_ip").inc()
 
-    if payload.use_cache:
+    if use_cache:
         STATE.cache.set(cache_key, result)
 
-    return format_output(result, payload.output_format)
+    return format_output(result, output_format)
+
 
 @app.tool("geolocate_multiple_ips", description="Get geolocation information for multiple IP addresses with batch concurrency")
-def geolocate_multiple_ips(payload: GeolocateMultipleIPsInput) -> str:
+def geolocate_multiple_ips(
+    ip_addresses: List[str],
+    include_asn: bool = True,
+    output_format: Literal["json", "summary", "csv"] = "json",
+    use_cache: bool = True
+) -> str:
+    """
+    Args:
+        ip_addresses: List of IPv4 or IPv6 addresses (max 100)
+        include_asn: Whether to include ASN information
+        output_format: Output format (json, summary, or csv)
+        use_cache: Whether to use cached results
+    """
+    if not ip_addresses or len(ip_addresses) > 100:
+        return json.dumps({"error": "ip_addresses must contain 1-100 IPs"}, indent=2)
+    
     REQUESTS_TOTAL.labels(tool="geolocate_multiple_ips").inc()
     STATE.request_count += 1
-    BATCH_SIZE.observe(len(payload.ip_addresses))
+    BATCH_SIZE.observe(len(ip_addresses))
 
-    # Concurrency limiter
     sem = asyncio.Semaphore(STATE.batch_concurrency)
 
     async def process_ip(ip: str) -> Dict[str, Any]:
         if not validate_ip(ip):
             return {"ip_address": ip, "error": "Invalid IP address format"}
 
-        cache_key = f"{ip}:{payload.include_asn}"
-        cached = STATE.cache.get(cache_key) if payload.use_cache else None
+        cache_key = f"{ip}:{include_asn}"
+        cached = STATE.cache.get(cache_key) if use_cache else None
         if cached:
             CACHE_HITS.labels(kind="batch").inc()
             return cached
         else:
-            if payload.use_cache:
+            if use_cache:
                 CACHE_MISSES.labels(kind="batch").inc()
 
         async with sem:
-            # Run potentially blocking DB calls in a thread
             item: Dict[str, Any] = {"ip_address": ip}
             try:
                 item["location"] = await asyncio.to_thread(get_city_info, ip)
             except Exception as e:
                 item["location"] = {"error": str(e)}
                 REQUEST_ERRORS_TOTAL.labels(tool="geolocate_multiple_ips").inc()
-            if payload.include_asn:
+            if include_asn:
                 try:
                     item["asn"] = await asyncio.to_thread(get_asn_info, ip)
                 except Exception as e:
                     item["asn"] = {"error": str(e)}
                     REQUEST_ERRORS_TOTAL.labels(tool="geolocate_multiple_ips").inc()
-            if payload.use_cache:
+            if use_cache:
                 STATE.cache.set(cache_key, item)
             return item
 
-    # Run all in parallel with gather
     loop = asyncio.get_event_loop()
     results: List[Dict[str, Any]] = loop.run_until_complete(
-        asyncio.gather(*(process_ip(ip) for ip in payload.ip_addresses))
+        asyncio.gather(*(process_ip(ip) for ip in ip_addresses))
     )
 
-    return format_output(results, payload.output_format)
+    return format_output(results, output_format)
+
 
 @app.tool("get_asn_info", description="Get ASN (Autonomous System Number) information for an IP address")
-def get_asn_info_tool(payload: GetASNInput) -> str:
+def get_asn_info_tool(ip_address: str) -> str:
+    """
+    Args:
+        ip_address: IPv4 or IPv6 address
+    """
+    if not validate_ip(ip_address):
+        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
+    
     REQUESTS_TOTAL.labels(tool="get_asn_info").inc()
     STATE.request_count += 1
     try:
-        data = get_asn_info(payload.ip_address)
-        return json.dumps({"ip_address": payload.ip_address, "asn": data}, indent=2)
+        data = get_asn_info(ip_address)
+        return json.dumps({"ip_address": ip_address, "asn": data}, indent=2)
     except Exception as e:
         REQUEST_ERRORS_TOTAL.labels(tool="get_asn_info").inc()
         return json.dumps({"error": str(e)}, indent=2)
 
+
 @app.tool("calculate_distance", description="Calculate distance between two geographic coordinates")
-def calculate_distance(payload: DistanceInput) -> str:
+def calculate_distance(
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float,
+    unit: Literal["km", "mi"] = "km"
+) -> str:
+    """
+    Args:
+        lat1: Latitude of first point
+        lon1: Longitude of first point
+        lat2: Latitude of second point
+        lon2: Longitude of second point
+        unit: Unit of measurement (km or mi)
+    """
     REQUESTS_TOTAL.labels(tool="calculate_distance").inc()
     STATE.request_count += 1
     try:
-        distance = haversine(payload.lat1, payload.lon1, payload.lat2, payload.lon2, payload.unit)
+        distance = haversine(lat1, lon1, lat2, lon2, unit)
         result = {
-            "point1": {"latitude": payload.lat1, "longitude": payload.lon1},
-            "point2": {"latitude": payload.lat2, "longitude": payload.lon2},
+            "point1": {"latitude": lat1, "longitude": lon1},
+            "point2": {"latitude": lat2, "longitude": lon2},
             "distance": round(distance, 2),
-            "unit": payload.unit,
+            "unit": unit,
         }
         return json.dumps(result, indent=2)
     except Exception as e:
         REQUEST_ERRORS_TOTAL.labels(tool="calculate_distance").inc()
         return json.dumps({"error": str(e)}, indent=2)
 
+
 @app.tool("server_management", description="Server management operations (clear cache, get stats, reload databases)")
-def server_management(payload: ServerManagementInput) -> str:
+def server_management(action: Literal["clear_cache", "get_stats", "reload_databases"]) -> str:
+    """
+    Args:
+        action: Management action to perform
+    """
     REQUESTS_TOTAL.labels(tool="server_management").inc()
     STATE.request_count += 1
-    if payload.action == "clear_cache":
+    if action == "clear_cache":
         STATE.cache.clear()
         return "Cache cleared successfully"
-    if payload.action == "get_stats":
+    if action == "get_stats":
         uptime = datetime.now() - STATE.start_time
         stats = {
             "server": {
@@ -609,37 +605,51 @@ def server_management(payload: ServerManagementInput) -> str:
             "databases": STATE.db_info,
         }
         return json.dumps(stats, indent=2)
-    if payload.action == "reload_databases":
+    if action == "reload_databases":
         STATE.close_readers()
         STATE.validate_db_paths()
         return "Database information reloaded"
-    return json.dumps({"error": f"Unknown action: {payload.action}"}, indent=2)
+    return json.dumps({"error": f"Unknown action: {action}"}, indent=2)
+
 
 @app.tool("geolocate_country", description="Get country-only geolocation info for a single IP address")
-def geolocate_country(payload: GeolocateCountryInput) -> str:
+def geolocate_country(
+    ip_address: str,
+    output_format: Literal["json", "summary", "csv"] = "json",
+    use_cache: bool = True
+) -> str:
+    """
+    Args:
+        ip_address: IPv4 or IPv6 address
+        output_format: Output format (json, summary, or csv)
+        use_cache: Whether to use cached results
+    """
+    if not validate_ip(ip_address):
+        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
+    
     REQUESTS_TOTAL.labels(tool="geolocate_country").inc()
     STATE.request_count += 1
 
-    cache_key = f"{payload.ip_address}:country"
-    cached = STATE.cache.get(cache_key) if payload.use_cache else None
+    cache_key = f"{ip_address}:country"
+    cached = STATE.cache.get(cache_key) if use_cache else None
     if cached:
         CACHE_HITS.labels(kind="single").inc()
-        return format_output(cached, payload.output_format)
+        return format_output(cached, output_format)
     else:
-        if payload.use_cache:
+        if use_cache:
             CACHE_MISSES.labels(kind="single").inc()
 
-    result: Dict[str, Any] = {"ip_address": payload.ip_address}
+    result: Dict[str, Any] = {"ip_address": ip_address}
     try:
-        result["location"] = get_country_info(payload.ip_address)
+        result["location"] = get_country_info(ip_address)
     except Exception as e:
         result["location"] = {"error": str(e)}
         REQUEST_ERRORS_TOTAL.labels(tool="geolocate_country").inc()
 
-    if payload.use_cache:
+    if use_cache:
         STATE.cache.set(cache_key, result)
 
-    return format_output(result, payload.output_format)
+    return format_output(result, output_format)
 
 # -------------------------
 # Entrypoint
