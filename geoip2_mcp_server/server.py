@@ -33,6 +33,7 @@ from typing import List, Literal
 import sys, asyncio, logging
 
 from fastmcp import FastMCP
+
 # Metrics
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
@@ -45,12 +46,17 @@ logger = logging.getLogger("enhanced-geoip-fastmcp")
 # -------------------------
 
 REQUESTS_TOTAL = Counter("geoip_requests_total", "Total tool requests", ["tool"])
-REQUEST_ERRORS_TOTAL = Counter("geoip_request_errors_total", "Total tool request errors", ["tool"])
-LOOKUP_LATENCY = Histogram("geoip_lookup_latency_seconds", "Lookup latency (seconds)", ["kind"])  # city/asn/country
+REQUEST_ERRORS_TOTAL = Counter(
+    "geoip_request_errors_total", "Total tool request errors", ["tool"]
+)
+LOOKUP_LATENCY = Histogram(
+    "geoip_lookup_latency_seconds", "Lookup latency (seconds)", ["kind"]
+)  # city/asn/country
 BATCH_SIZE = Histogram("geoip_batch_size", "Batch size for geolocate_multiple_ips")
 CACHE_HITS = Counter("geoip_cache_hits_total", "Cache hits", ["kind"])  # single/batch
 CACHE_MISSES = Counter("geoip_cache_misses_total", "Cache misses", ["kind"])
 SERVER_UPTIME = Gauge("geoip_server_uptime_seconds", "Server uptime seconds")
+
 
 def maybe_start_prometheus():
     port = os.getenv("PROMETHEUS_PORT")
@@ -62,15 +68,18 @@ def maybe_start_prometheus():
         except Exception as e:
             logger.error(f"Failed to start Prometheus exporter on {port}: {e}")
 
+
 # -------------------------
 # Cache
 # -------------------------
+
 
 @dataclass
 class CacheEntry:
     data: Dict[str, Any]
     timestamp: datetime
     ttl: int = 3600
+
 
 class GeoIPCache:
     def __init__(self, default_ttl: int = 3600):
@@ -106,18 +115,30 @@ class GeoIPCache:
             "entries": len(self.cache),
             "hits": self.hits,
             "misses": self.misses,
-            "hit_rate": f"{hit_rate:.2f}%"
+            "hit_rate": f"{hit_rate:.2f}%",
         }
+
 
 # -------------------------
 # Config and state
 # -------------------------
 
+
 class ServerState:
     def __init__(self):
-        self.city_db_path = os.path.expanduser(os.getenv("GEOIP_CITY_DB", "~/Downloads/GeoLite2-City.mmdb"))
-        self.asn_db_path = os.path.expanduser(os.getenv("GEOIP_ASN_DB", "~/Downloads/GeoLite2-ASN.mmdb"))
-        self.country_db_path = os.path.expanduser(os.getenv("GEOIP_COUNTRY_DB", "~/Downloads/GeoLite2-Country.mmdb"))
+        # Default data directory complying with XDG Base Directory specification
+        xdg_data_home = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+        default_data_dir = Path(xdg_data_home) / 'mcp_geoip2'
+
+        self.city_db_path = os.path.expanduser(
+            os.getenv("GEOIP_CITY_DB", str(default_data_dir / "GeoLite2-City.mmdb"))
+        )
+        self.asn_db_path = os.path.expanduser(
+            os.getenv("GEOIP_ASN_DB", str(default_data_dir / "GeoLite2-ASN.mmdb"))
+        )
+        self.country_db_path = os.path.expanduser(
+            os.getenv("GEOIP_COUNTRY_DB", str(default_data_dir / "GeoLite2-Country.mmdb"))
+        )
         cache_ttl = int(os.getenv("GEOIP_CACHE_TTL", "3600"))
         self.batch_concurrency = max(1, int(os.getenv("GEOIP_CONCURRENCY", "20")))
 
@@ -185,16 +206,20 @@ class ServerState:
 
     def get_country_reader(self) -> geoip2.database.Reader:
         if not Path(self.country_db_path).exists():
-            raise FileNotFoundError(f"Country database not found at {self.country_db_path}")
+            raise FileNotFoundError(
+                f"Country database not found at {self.country_db_path}"
+            )
         if self._country_reader is None:
             self._country_reader = geoip2.database.Reader(self.country_db_path)
         return self._country_reader
+
 
 STATE = ServerState()
 
 # -------------------------
 # Utilities
 # -------------------------
+
 
 def validate_ip(ip_str: str) -> bool:
     try:
@@ -203,34 +228,49 @@ def validate_ip(ip_str: str) -> bool:
     except ValueError:
         return False
 
+
 def is_private_ip(ip_str: str) -> bool:
     try:
         return ipaddress.ip_address(ip_str).is_private
     except ValueError:
         return False
 
+
 def get_ip_type(ip_str: str) -> str:
     try:
         ip = ipaddress.ip_address(ip_str)
-        if ip.is_private: return "private"
-        if ip.is_loopback: return "loopback"
-        if ip.is_multicast: return "multicast"
-        if ip.is_reserved: return "reserved"
+        if ip.is_private:
+            return "private"
+        if ip.is_loopback:
+            return "loopback"
+        if ip.is_multicast:
+            return "multicast"
+        if ip.is_reserved:
+            return "reserved"
         return "public"
     except ValueError:
         return "invalid"
 
-def haversine(lat1: float, lon1: float, lat2: float, lon2: float, unit: str = "km") -> float:
-    lat1_rad = math.radians(lat1); lon1_rad = math.radians(lon1)
-    lat2_rad = math.radians(lat2); lon2_rad = math.radians(lon2)
-    dlat = lat2_rad - lat1_rad; dlon = lon2_rad - lon1_rad
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2)
+
+def haversine(
+    lat1: float, lon1: float, lat2: float, lon2: float, unit: str = "km"
+) -> float:
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     distance_km = 6371.0 * c
     if unit.lower() in ("mi", "miles"):
         return distance_km * 0.621371
     return distance_km
+
 
 def to_summary(item: Dict[str, Any]) -> str:
     ip = item.get("ip_address", "Unknown")
@@ -257,6 +297,7 @@ def to_summary(item: Dict[str, Any]) -> str:
             summary.append(f"ASN: AS{num} ({org})")
     return "\n".join(summary)
 
+
 def to_csv(data: Any) -> str:
     items = data if isinstance(data, list) else [data]
     if not items:
@@ -272,20 +313,25 @@ def to_csv(data: Any) -> str:
         row = [item.get("ip_address", "")]
         if "location" in item and not item["location"].get("error"):
             loc = item["location"]
-            row.extend([
-                loc.get("country", {}).get("name", ""),
-                loc.get("city", {}).get("name", ""),
-                str(loc.get("location", {}).get("latitude", "")),
-                str(loc.get("location", {}).get("longitude", "")),
-            ])
+            row.extend(
+                [
+                    loc.get("country", {}).get("name", ""),
+                    loc.get("city", {}).get("name", ""),
+                    str(loc.get("location", {}).get("latitude", "")),
+                    str(loc.get("location", {}).get("longitude", "")),
+                ]
+            )
         if "asn" in item and not item["asn"].get("error"):
             asn = item["asn"]
-            row.extend([
-                str(asn.get("autonomous_system_number", "")),
-                asn.get("autonomous_system_organization", ""),
-            ])
+            row.extend(
+                [
+                    str(asn.get("autonomous_system_number", "")),
+                    asn.get("autonomous_system_organization", ""),
+                ]
+            )
         lines.append(",".join(f'"{field}"' for field in row))
     return "\n".join(lines)
+
 
 def format_output(data: Any, format_type: str) -> str:
     if format_type == "json":
@@ -298,9 +344,11 @@ def format_output(data: Any, format_type: str) -> str:
         return to_csv(data)
     return json.dumps(data, indent=2)
 
+
 # -------------------------
 # Database accessors
 # -------------------------
+
 
 def get_city_info(ip_addr: str) -> Dict[str, Any]:
     reader = STATE.get_city_reader()
@@ -311,7 +359,9 @@ def get_city_info(ip_addr: str) -> Dict[str, Any]:
                 "country": {
                     "iso_code": response.country.iso_code,
                     "name": response.country.name,
-                    "names": dict(response.country.names) if response.country.names else {},
+                    "names": dict(response.country.names)
+                    if response.country.names
+                    else {},
                 },
                 "subdivisions": {
                     "most_specific": {
@@ -322,19 +372,26 @@ def get_city_info(ip_addr: str) -> Dict[str, Any]:
                 "city": {"name": response.city.name},
                 "postal": {"code": response.postal.code},
                 "location": {
-                    "latitude": float(response.location.latitude) if response.location.latitude else None,
-                    "longitude": float(response.location.longitude) if response.location.longitude else None,
+                    "latitude": float(response.location.latitude)
+                    if response.location.latitude
+                    else None,
+                    "longitude": float(response.location.longitude)
+                    if response.location.longitude
+                    else None,
                     "accuracy_radius": response.location.accuracy_radius,
                     "time_zone": response.location.time_zone,
                 },
                 "traits": {
-                    "network": str(response.traits.network) if response.traits.network else None,
+                    "network": str(response.traits.network)
+                    if response.traits.network
+                    else None,
                     "ip_type": get_ip_type(ip_addr),
                     "is_private": is_private_ip(ip_addr),
                 },
             }
         except geoip2.errors.AddressNotFoundError:
             return {"error": f"No city information found for IP {ip_addr}"}
+
 
 def get_asn_info(ip_addr: str) -> Dict[str, Any]:
     reader = STATE.get_asn_reader()
@@ -350,6 +407,7 @@ def get_asn_info(ip_addr: str) -> Dict[str, Any]:
         except geoip2.errors.AddressNotFoundError:
             return {"error": f"No ASN information found for IP {ip_addr}"}
 
+
 def get_country_info(ip_addr: str) -> Dict[str, Any]:
     reader = STATE.get_country_reader()
     with LOOKUP_LATENCY.labels(kind="country").time():
@@ -359,15 +417,18 @@ def get_country_info(ip_addr: str) -> Dict[str, Any]:
                 "country": {
                     "iso_code": response.country.iso_code,
                     "name": response.country.name,
-                    "names": dict(response.country.names) if response.country.names else {},
+                    "names": dict(response.country.names)
+                    if response.country.names
+                    else {},
                 },
                 "traits": {
                     "ip_type": get_ip_type(ip_addr),
                     "is_private": is_private_ip(ip_addr),
-                }
+                },
             }
         except geoip2.errors.AddressNotFoundError:
             return {"error": f"No country information found for IP {ip_addr}"}
+
 
 # -------------------------
 # FastMCP app
@@ -378,8 +439,14 @@ app = FastMCP(
     version="1.2.0",
 )
 
+
 # Resources
-@app.resource("geoip://server/status", name="Server Status", description="Current server status and statistics", mime_type="application/json")
+@app.resource(
+    "geoip://server/status",
+    name="Server Status",
+    description="Current server status and statistics",
+    mime_type="application/json",
+)
 def server_status() -> str:
     uptime = (datetime.now() - STATE.start_time).total_seconds()
     SERVER_UPTIME.set(uptime)
@@ -387,22 +454,42 @@ def server_status() -> str:
         "status": "running",
         "uptime_seconds": int(uptime),
         "requests_processed": STATE.request_count,
-        "databases_loaded": sum(1 for db in STATE.db_info.values() if db.get("available")),
+        "databases_loaded": sum(
+            1 for db in STATE.db_info.values() if db.get("available")
+        ),
         "cache_enabled": True,
         "version": app.version,
         "concurrency": STATE.batch_concurrency,
     }
     return json.dumps(data, indent=2)
 
-@app.resource("geoip://databases/info", name="Database Information", description="Information about loaded GeoIP databases", mime_type="application/json")
+
+@app.resource(
+    "geoip://databases/info",
+    name="Database Information",
+    description="Information about loaded GeoIP databases",
+    mime_type="application/json",
+)
 def database_info() -> str:
     return json.dumps(STATE.db_info, indent=2)
 
-@app.resource("geoip://cache/stats", name="Cache Statistics", description="Cache performance statistics", mime_type="application/json")
+
+@app.resource(
+    "geoip://cache/stats",
+    name="Cache Statistics",
+    description="Cache performance statistics",
+    mime_type="application/json",
+)
 def cache_stats() -> str:
     return json.dumps(STATE.cache.stats(), indent=2)
 
-@app.resource("geoip://metrics", name="Server Metrics", description="Internal server metrics snapshot (counters/histograms may be partial)", mime_type="application/json")
+
+@app.resource(
+    "geoip://metrics",
+    name="Server Metrics",
+    description="Internal server metrics snapshot (counters/histograms may be partial)",
+    mime_type="application/json",
+)
 def metrics_snapshot() -> str:
     uptime = (datetime.now() - STATE.start_time).total_seconds()
     snapshot = {
@@ -419,12 +506,16 @@ def metrics_snapshot() -> str:
 # Tools (FIXED)
 # -------------------------
 
-@app.tool("geolocate_ip", description="Get comprehensive geolocation information for a single IP address")
+
+@app.tool(
+    "geolocate_ip",
+    description="Get comprehensive geolocation information for a single IP address",
+)
 def geolocate_ip(
     ip_address: str,
     include_asn: bool = True,
     output_format: Literal["json", "summary", "csv"] = "json",
-    use_cache: bool = True
+    use_cache: bool = True,
 ) -> str:
     """
     Args:
@@ -435,8 +526,10 @@ def geolocate_ip(
     """
     # Validate IP
     if not validate_ip(ip_address):
-        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
-    
+        return json.dumps(
+            {"error": f"Invalid IP address format: {ip_address}"}, indent=2
+        )
+
     REQUESTS_TOTAL.labels(tool="geolocate_ip").inc()
     STATE.request_count += 1
 
@@ -469,12 +562,15 @@ def geolocate_ip(
     return format_output(result, output_format)
 
 
-@app.tool("geolocate_multiple_ips", description="Get geolocation information for multiple IP addresses with batch concurrency")
+@app.tool(
+    "geolocate_multiple_ips",
+    description="Get geolocation information for multiple IP addresses with batch concurrency",
+)
 def geolocate_multiple_ips(
     ip_addresses: List[str],
     include_asn: bool = True,
     output_format: Literal["json", "summary", "csv"] = "json",
-    use_cache: bool = True
+    use_cache: bool = True,
 ) -> str:
     """
     Args:
@@ -485,7 +581,7 @@ def geolocate_multiple_ips(
     """
     if not ip_addresses or len(ip_addresses) > 100:
         return json.dumps({"error": "ip_addresses must contain 1-100 IPs"}, indent=2)
-    
+
     REQUESTS_TOTAL.labels(tool="geolocate_multiple_ips").inc()
     STATE.request_count += 1
     BATCH_SIZE.observe(len(ip_addresses))
@@ -530,15 +626,20 @@ def geolocate_multiple_ips(
     return format_output(results, output_format)
 
 
-@app.tool("get_asn_info", description="Get ASN (Autonomous System Number) information for an IP address")
+@app.tool(
+    "get_asn_info",
+    description="Get ASN (Autonomous System Number) information for an IP address",
+)
 def get_asn_info_tool(ip_address: str) -> str:
     """
     Args:
         ip_address: IPv4 or IPv6 address
     """
     if not validate_ip(ip_address):
-        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
-    
+        return json.dumps(
+            {"error": f"Invalid IP address format: {ip_address}"}, indent=2
+        )
+
     REQUESTS_TOTAL.labels(tool="get_asn_info").inc()
     STATE.request_count += 1
     try:
@@ -549,13 +650,12 @@ def get_asn_info_tool(ip_address: str) -> str:
         return json.dumps({"error": str(e)}, indent=2)
 
 
-@app.tool("calculate_distance", description="Calculate distance between two geographic coordinates")
+@app.tool(
+    "calculate_distance",
+    description="Calculate distance between two geographic coordinates",
+)
 def calculate_distance(
-    lat1: float,
-    lon1: float,
-    lat2: float,
-    lon2: float,
-    unit: Literal["km", "mi"] = "km"
+    lat1: float, lon1: float, lat2: float, lon2: float, unit: Literal["km", "mi"] = "km"
 ) -> str:
     """
     Args:
@@ -581,8 +681,13 @@ def calculate_distance(
         return json.dumps({"error": str(e)}, indent=2)
 
 
-@app.tool("server_management", description="Server management operations (clear cache, get stats, reload databases)")
-def server_management(action: Literal["clear_cache", "get_stats", "reload_databases"]) -> str:
+@app.tool(
+    "server_management",
+    description="Server management operations (clear cache, get stats, reload databases)",
+)
+def server_management(
+    action: Literal["clear_cache", "get_stats", "reload_databases"],
+) -> str:
     """
     Args:
         action: Management action to perform
@@ -612,11 +717,14 @@ def server_management(action: Literal["clear_cache", "get_stats", "reload_databa
     return json.dumps({"error": f"Unknown action: {action}"}, indent=2)
 
 
-@app.tool("geolocate_country", description="Get country-only geolocation info for a single IP address")
+@app.tool(
+    "geolocate_country",
+    description="Get country-only geolocation info for a single IP address",
+)
 def geolocate_country(
     ip_address: str,
     output_format: Literal["json", "summary", "csv"] = "json",
-    use_cache: bool = True
+    use_cache: bool = True,
 ) -> str:
     """
     Args:
@@ -625,8 +733,10 @@ def geolocate_country(
         use_cache: Whether to use cached results
     """
     if not validate_ip(ip_address):
-        return json.dumps({"error": f"Invalid IP address format: {ip_address}"}, indent=2)
-    
+        return json.dumps(
+            {"error": f"Invalid IP address format: {ip_address}"}, indent=2
+        )
+
     REQUESTS_TOTAL.labels(tool="geolocate_country").inc()
     STATE.request_count += 1
 
@@ -651,23 +761,27 @@ def geolocate_country(
 
     return format_output(result, output_format)
 
+
 # -------------------------
 # Entrypoint
 # -------------------------
 
+
 def main():
     """Synchronous main function for MCP compatibility"""
     import logging
+
     logging.basicConfig(level=logging.INFO)
-    
+
     # Start Prometheus exporter if PROMETHEUS_PORT is set
     try:
         maybe_start_prometheus()
     except NameError:
         pass
-    
+
     # Run synchronously
     app.run()  # Use sync run instead of run_async()
+
 
 if __name__ == "__main__":
     main()

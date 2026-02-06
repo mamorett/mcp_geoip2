@@ -11,16 +11,25 @@ import hashlib
 from pathlib import Path
 from datetime import datetime
 import logging
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class GeoIPDatabaseManager:
     """Manage GeoIP database downloads and updates"""
     
-    def __init__(self, license_key: str, data_dir: str = "./data"):
+    def __init__(self, license_key: str, data_dir: Optional[str] = None):
         self.license_key = license_key
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(exist_ok=True)
+        
+        if data_dir:
+            self.data_dir = Path(data_dir).expanduser().resolve()
+        else:
+            # Use XDG_DATA_HOME or default to ~/.local/share
+            xdg_data_home = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+            self.data_dir = Path(xdg_data_home) / 'mcp_geoip2'
+            
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"GeoIP databases stored in: {self.data_dir}")
         
         self.databases = {
             "GeoLite2-City": "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={}&suffix=tar.gz",

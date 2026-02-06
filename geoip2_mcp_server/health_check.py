@@ -37,10 +37,13 @@ class HealthChecker:
             "timestamp": datetime.now().isoformat()
         }
         
+        xdg_data_home = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+        default_data_dir = Path(xdg_data_home) / 'mcp_geoip2'
+
         db_paths = {
-            "city": os.getenv("GEOIP_CITY_DB"),
-            "asn": os.getenv("GEOIP_ASN_DB"),
-            "country": os.getenv("GEOIP_COUNTRY_DB")
+            "city": os.getenv("GEOIP_CITY_DB", str(default_data_dir / "GeoLite2-City.mmdb")),
+            "asn": os.getenv("GEOIP_ASN_DB", str(default_data_dir / "GeoLite2-ASN.mmdb")),
+            "country": os.getenv("GEOIP_COUNTRY_DB", str(default_data_dir / "GeoLite2-Country.mmdb"))
         }
         
         for db_name, db_path in db_paths.items():
@@ -81,8 +84,12 @@ class HealthChecker:
         try:
             import geoip2.database
             
+            # Define default path
+            xdg_data_home = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+            default_data_dir = Path(xdg_data_home) / 'mcp_geoip2'
+
             # Test city database
-            city_db = os.getenv("GEOIP_CITY_DB")
+            city_db = os.getenv("GEOIP_CITY_DB", str(default_data_dir / "GeoLite2-City.mmdb"))
             if city_db and os.path.exists(city_db):
                 try:
                     with geoip2.database.Reader(city_db) as reader:
@@ -97,7 +104,7 @@ class HealthChecker:
                     result["status"] = "unhealthy"
             
             # Test ASN database
-            asn_db = os.getenv("GEOIP_ASN_DB")
+            asn_db = os.getenv("GEOIP_ASN_DB", str(default_data_dir / "GeoLite2-ASN.mmdb"))
             if asn_db and os.path.exists(asn_db):
                 try:
                     with geoip2.database.Reader(asn_db) as reader:
