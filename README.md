@@ -21,37 +21,61 @@ A Model Context Protocol (MCP) server providing IP geolocation and ASN lookup se
 
 ## Setup
 
-### 1. Install Dependencies
+### Option 1: Automatic Download (Recommended)
+
+The server can automatically download and update the required databases if you provide a MaxMind License Key.
+
+1.  **Get a License Key**: Register for a free MaxMind account at https://www.maxmind.com/en/geolite2/signup and generate a license key.
+2.  **Set Environment Environment Variable**:
+    ```sh
+    export MAXMIND_LICENSE_KEY="your_license_key_here"
+    ```
+3.  **Run the Server**: The server will download the databases to `~/.local/share/mcp_geoip2/` on startup.
+
+### Option 2: Manual Installation
+
+1.  **Download Databases**: Download `GeoLite2-City.mmdb`, `GeoLite2-ASN.mmdb`, and optionally `GeoLite2-Country.mmdb` from MaxMind.
+2.  **Place Files**: Move the `.mmdb` files to the default data directory:
+    ```sh
+    mkdir -p ~/.local/share/mcp_geoip2/
+    mv *.mmdb ~/.local/share/mcp_geoip2/
+    ```
+
+### Configuration (Optional)
+
+You can override the default paths if needed:
 
 ```sh
-pip install -r requirements.txt
-```
-
-### 2. Download MaxMind GeoIP2 Databases
-
-- Register for a free MaxMind account: https://www.maxmind.com/
-- Download `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` (and optionally `GeoLite2-Country.mmdb`).
-- Place them in a known directory (e.g., `~/Downloads/`).
-
-### 3. Set Environment Variables
-
-```sh
-export GEOIP_CITY_DB="~/Downloads/GeoLite2-City.mmdb"
-export GEOIP_ASN_DB="~/Downloads/GeoLite2-ASN.mmdb"
-export GEOIP_COUNTRY_DB="~/Downloads/GeoLite2-Country.mmdb"  # optional
+export GEOIP_CITY_DB="/path/to/GeoLite2-City.mmdb"
+export GEOIP_ASN_DB="/path/to/GeoLite2-ASN.mmdb"
+export GEOIP_COUNTRY_DB="/path/to/GeoLite2-Country.mmdb"
 export GEOIP_CACHE_TTL=3600
 export GEOIP_CONCURRENCY=20
-export PROMETHEUS_PORT=9000  # optional, for Prometheus metrics
+export PROMETHEUS_PORT=9000
 ```
 
 ---
 
 ## Usage
 
-### Run the Server
+### Run with `uvx` (Recommended)
+
+You can run the server directly without installing dependencies manually:
 
 ```sh
-python server.py
+uvx geoip2-mcp-server
+# OR
+uvx mcp_geoip2
+```
+
+### Local Dev Setup
+
+```sh
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Run the server
+python -m geoip2_mcp_server.server
 ```
 
 The server communicates via MCP protocol (stdio by default).
