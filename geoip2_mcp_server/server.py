@@ -130,6 +130,18 @@ class ServerState:
         xdg_data_home = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
         default_data_dir = Path(xdg_data_home) / 'mcp_geoip2'
 
+        # Check for MaxMind License Key
+        license_key = os.getenv("MAXMIND_LICENSE_KEY")
+        if license_key:
+            # If license key is present, attempt to update/download databases
+            try:
+                from .db_manager import GeoIPDatabaseManager
+                logger.info("MaxMind license key found, checking databases...")
+                db_mgr = GeoIPDatabaseManager(license_key, str(default_data_dir))
+                db_mgr.update_if_old()
+            except Exception as e:
+                logger.error(f"Failed to auto-update databases: {e}")
+
         self.city_db_path = os.path.expanduser(
             os.getenv("GEOIP_CITY_DB", str(default_data_dir / "GeoLite2-City.mmdb"))
         )
@@ -177,6 +189,9 @@ class ServerState:
                     self.db_info[db_name] = {"available": False, "error": str(e)}
             else:
                 logger.warning(f"{db_name.capitalize()} database not found at {p}")
+                logger.warning(
+                    f"To fix: Set MAXMIND_LICENSE_KEY env var to auto-download, or manually place '{db_name}.mmdb' in '{p.parent}'"
+                )
                 self.db_info[db_name] = {"available": False, "error": "File not found"}
 
     def close_readers(self):
