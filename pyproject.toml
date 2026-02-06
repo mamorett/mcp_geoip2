@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 mcp_geoip2 = "geoip2_mcp_server.server:main"
+geoip2-mcp-server = "geoip2_mcp_server.server:main"
 
 [project.optional-dependencies]
 dev = [

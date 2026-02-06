@@ -1,15 +1,15 @@
 {
   "databases": {
     "city": {
-      "path": "~/Downloads/GeoLite2-City.mmdb",
+      "path": "~/.local/share/mcp_geoip2/GeoLite2-City.mmdb",
       "required": true
     },
     "asn": {
-      "path": "~/Downloads/GeoLite2-ASN.mmdb",
+      "path": "~/.local/share/mcp_geoip2/GeoLite2-ASN.mmdb",
       "required": true
     },
     "country": {
-      "path": "~/Downloads/GeoLite2-Country.mmdb",
+      "path": "~/.local/share/mcp_geoip2/GeoLite2-Country.mmdb",
       "required": false
     }
   },
