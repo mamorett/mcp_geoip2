@@ -581,7 +581,7 @@ def geolocate_ip(
     "geolocate_multiple_ips",
     description="Get geolocation information for multiple IP addresses with batch concurrency",
 )
-def geolocate_multiple_ips(
+async def geolocate_multiple_ips(
     ip_addresses: List[str],
     include_asn: bool = True,
     output_format: Literal["json", "summary", "csv"] = "json",
@@ -633,9 +633,8 @@ def geolocate_multiple_ips(
                 STATE.cache.set(cache_key, item)
             return item
 
-    loop = asyncio.get_event_loop()
-    results: List[Dict[str, Any]] = loop.run_until_complete(
-        asyncio.gather(*(process_ip(ip) for ip in ip_addresses))
+    results: List[Dict[str, Any]] = await asyncio.gather(
+        *(process_ip(ip) for ip in ip_addresses)
     )
 
     return format_output(results, output_format)
