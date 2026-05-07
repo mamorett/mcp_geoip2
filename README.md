@@ -82,6 +82,72 @@ The server communicates via MCP protocol (stdio by default).
 
 ---
 
+### Claude Code Configuration
+
+Add the GeoIP MCP server to your Claude Code configuration.
+
+**Option A: Global config** (`~/.claude/claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "geoip2": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/mamorett/mcp_geoip2",
+        "mcp_geoip2"
+      ],
+      "env": {
+        "MAXMIND_LICENSE_KEY": "your_license_key_here"
+      }
+    }
+  }
+}
+```
+
+**Option B: Project config** (`.mcp.json` in your project root)
+
+```json
+{
+  "mcpServers": {
+    "geoip2": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/mamorett/mcp_geoip2",
+        "mcp_geoip2"
+      ],
+      "env": {
+        "MAXMIND_LICENSE_KEY": "your_license_key_here",
+        "GEOIP_CACHE_TTL": "3600",
+        "GEOIP_CONCURRENCY": "20"
+      }
+    }
+  }
+}
+```
+
+**Option C: Local dev (from source)**
+
+```json
+{
+  "mcpServers": {
+    "geoip2": {
+      "command": "python",
+      "args": ["-m", "geoip2_mcp_server.server"],
+      "env": {
+        "MAXMIND_LICENSE_KEY": "your_license_key_here"
+      }
+    }
+  }
+}
+```
+
+After adding the configuration, restart Claude Code. The server will be available as `mcp__mcp_geoip2` with all geolocation tools.
+
+---
+
 ## Available Tools
 
 ### 1. `geolocate_ip`
