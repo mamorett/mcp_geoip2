@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import ipaddress
+import threading
 import geoip2.database
 import geoip2.errors
 from pydantic import BaseModel, Field, field_validator
@@ -158,6 +159,7 @@ class ServerState:
         self.request_count = 0
         self.start_time = datetime.now()
         self.db_info: Dict[str, Any] = {}
+        self._lock = threading.Lock()
 
         # Lazy readers
         self._city_reader: Optional[geoip2.database.Reader] = None
@@ -209,14 +211,18 @@ class ServerState:
         if not Path(self.city_db_path).exists():
             raise FileNotFoundError(f"City database not found at {self.city_db_path}")
         if self._city_reader is None:
-            self._city_reader = geoip2.database.Reader(self.city_db_path)
+            with self._lock:
+                if self._city_reader is None:
+                    self._city_reader = geoip2.database.Reader(self.city_db_path)
         return self._city_reader
 
     def get_asn_reader(self) -> geoip2.database.Reader:
         if not Path(self.asn_db_path).exists():
             raise FileNotFoundError(f"ASN database not found at {self.asn_db_path}")
         if self._asn_reader is None:
-            self._asn_reader = geoip2.database.Reader(self.asn_db_path)
+            with self._lock:
+                if self._asn_reader is None:
+                    self._asn_reader = geoip2.database.Reader(self.asn_db_path)
         return self._asn_reader
 
     def get_country_reader(self) -> geoip2.database.Reader:
@@ -225,7 +231,9 @@ class ServerState:
                 f"Country database not found at {self.country_db_path}"
             )
         if self._country_reader is None:
-            self._country_reader = geoip2.database.Reader(self.country_db_path)
+            with self._lock:
+                if self._country_reader is None:
+                    self._country_reader = geoip2.database.Reader(self.country_db_path)
         return self._country_reader
 
 
